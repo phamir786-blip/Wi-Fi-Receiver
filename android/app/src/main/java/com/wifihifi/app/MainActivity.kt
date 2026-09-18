@@ -22,6 +22,7 @@ import com.wifihifi.app.model.AudioStats
 import com.wifihifi.app.model.ReceiverDevice
 import com.wifihifi.app.model.StreamState
 import com.wifihifi.app.network.ReceiverDiscovery
+import com.wifihifi.app.network.ReceiverController
 import com.wifihifi.app.network.DiscoveryStats
 import com.wifihifi.app.service.AudioStreamService
 import com.wifihifi.app.ui.MainScreen
@@ -62,6 +63,7 @@ class MainActivity : ComponentActivity() {
 
     private var mediaProjectionManager: MediaProjectionManager? = null
     private var pendingReceiver: ReceiverDevice? = null
+    private val receiverController = ReceiverController()
 
     // Standard Runtime Permissions Launcher (Audio & Notifications)
     private val permissionLauncher = registerForActivityResult(
@@ -79,16 +81,23 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             try {
-                val mpm = mediaProjectionManager ?: (getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager)
-                val projection = mpm?.getMediaProjection(result.resultCode, result.data!!)
                 val receiver = pendingReceiver
-                val service = audioServiceState.value
-
-                if (projection != null && receiver != null && service != null) {
-                    service.startStreaming(projection, receiver)
-                } else {
-                    Toast.makeText(this, "Service not ready or capture failed", Toast.LENGTH_SHORT).show()
+                if (receiver == null) {
+                    Toast.makeText(this, "No receiver selected", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
                 }
+                val serviceIntent = Intent(this, AudioStreamService::class.java).apply {
+                    action = AudioStreamService.ACTION_START_STREAM
+                    putExtra(AudioStreamService.EXTRA_PROJECTION_RESULT_CODE, result.resultCode)
+                    putExtra(AudioStreamService.EXTRA_PROJECTION_DATA, result.data)
+                    putExtra(AudioStreamService.EXTRA_RECEIVER_IP, receiver.ipAddress)
+                    putExtra(AudioStreamService.EXTRA_RECEIVER_PORT, receiver.audioPort)
+                    putExtra(AudioStreamService.EXTRA_RECEIVER_NAME, receiver.deviceName)
+                    putExtra(AudioStreamService.EXTRA_RECEIVER_HOSTNAME, receiver.hostname)
+                    putExtra(AudioStreamService.EXTRA_RECEIVER_LATENCY, receiver.latencyMode)
+                }
+                ContextCompat.startForegroundService(this, serviceIntent)
+                Toast.makeText(this, "Connecting to ${receiver.deviceName}...", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Log.e(TAG, "Error acquiring MediaProjection", e)
                 Toast.makeText(this, "Capture initialization error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -186,11 +195,22 @@ class MainActivity : ComponentActivity() {
                         onSelectReceiver = { selectedReceiver = it },
                         onStartStreaming = {
                             val receiver = selectedReceiver
-                            if (receiver != null) {
-                                pendingReceiver = receiver
-                                checkAndLaunchCapture()
-                            } else {
+                            if (receiver == null) {
                                 Toast.makeText(this@MainActivity, "Please select a receiver first", Toast.LENGTH_SHORT).show()
+                            } else {
+                                coroutineScope.launch {
+                                    Toast.makeText(this@MainActivity, "Verifying ${receiver.deviceName}...", Toast.LENGTH_SHORT).show()
+                                    val status = receiverController.fetchStatus(receiver.ipAddress)
+                                    if (status == null) {
+                                        Toast.makeText(this@MainActivity, "Receiver verification failed at ${receiver.ipAddress}", Toast.LENGTH_LONG).show()
+                                        return@launch
+                                    }
+                                    pendingReceiver = receiver.copy(
+                                        isStreaming = status.optBoolean("streaming", false),
+                                        latencyMode = status.optString("latency_mode", receiver.latencyMode)
+                                    )
+                                    checkAndLaunchCapture()
+                                }
                             }
                         },
                         onStopStreaming = {
