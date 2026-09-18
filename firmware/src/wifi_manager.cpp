@@ -15,8 +15,7 @@ WifiManager g_wifi_manager;
 WifiManager::WifiManager()
     : state_(WIFI_STATE_DISCONNECTED),
       lastReconnectAttemptMs_(0),
-      reconnectAttempts_(0),
-      provisioningGraceUntilMs_(0) {}
+      reconnectAttempts_(0) {}
 
 static bool startProvisioningAp() {
     WiFi.mode(WIFI_OFF);
@@ -71,8 +70,7 @@ bool WifiManager::init() {
             // Keep the provisioning AP available until the saved STA connection
             // succeeds. There is no arbitrary provisioning timeout.
             state_ = WIFI_STATE_AP_MODE;
-            provisioningGraceUntilMs_ = 0;
-            reconnectAttempts_ = 0;
+                    reconnectAttempts_ = 0;
             ESP_LOGI(TAG, "Provisioning AP remains available until saved STA connection succeeds");
             // Do not enter AP+STA automatically here. The AP must remain
             // standalone and reliable until the user provisions/starts STA.
