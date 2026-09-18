@@ -193,7 +193,10 @@ class MainActivity : ComponentActivity() {
                         discoveryStats = discoveryStats,
                         discoveredReceivers = discoveredReceivers,
                         selectedReceiver = selectedReceiver,
-                        onSelectReceiver = { selectedReceiver = it },
+                        onSelectReceiver = {
+                            selectedReceiver = it
+                            audioServiceState.value?.setControlReceiver(it)
+                        },
                         onStartStreaming = {
                             val receiver = selectedReceiver
                             if (receiver == null) {
@@ -218,13 +221,34 @@ class MainActivity : ComponentActivity() {
                             audioServiceState.value?.stopStreaming()
                         },
                         onVolumeChanged = { vol ->
-                            audioServiceState.value?.setVolume(vol)
+                            val receiver = selectedReceiver
+                            if (receiver != null) {
+                                audioServiceState.value?.setVolumeForReceiver(receiver, vol)
+                                    ?: coroutineScope.launch {
+                                        receiverController.setVolume(receiver.ipAddress, vol)
+                                        defaultStreamState.value = defaultStreamState.value.copy(volume = vol)
+                                    }
+                            }
                         },
                         onMuteToggled = { mute ->
-                            audioServiceState.value?.setMute(mute)
+                            val receiver = selectedReceiver
+                            if (receiver != null) {
+                                audioServiceState.value?.setMuteForReceiver(receiver, mute)
+                                    ?: coroutineScope.launch {
+                                        receiverController.setMute(receiver.ipAddress, mute)
+                                        defaultStreamState.value = defaultStreamState.value.copy(isMuted = mute)
+                                    }
+                            }
                         },
                         onLatencyModeChanged = { mode ->
-                            audioServiceState.value?.setLatencyMode(mode)
+                            val receiver = selectedReceiver
+                            if (receiver != null) {
+                                audioServiceState.value?.setLatencyModeForReceiver(receiver, mode)
+                                    ?: coroutineScope.launch {
+                                        receiverController.setLatencyMode(receiver.ipAddress, mode)
+                                        defaultStreamState.value = defaultStreamState.value.copy(latencyMode = mode)
+                                    }
+                            }
                         },
                         onRefreshDiscovery = {
                             discoveredReceivers.clear()
