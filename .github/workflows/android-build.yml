@@ -21,7 +21,7 @@ jobs:
           java-version: '17'
       - name: Make Gradle executable
         run: chmod +x gradlew
-      - name: Build debug APK
+      - name: Build Android 16 debug APK
         run: ./gradlew assembleDebug --stacktrace
       - name: Upload APK
         uses: actions/upload-artifact@v4
