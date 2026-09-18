@@ -43,9 +43,15 @@ bool WifiManager::connectStation(const String& ssid, const String& password) {
     state_ = WIFI_STATE_CONNECTING;
     reconnectAttempts_ = 0;
 
-    WiFi.mode(WIFI_STA);
+    // Keep the provisioning AP available while the STA connects. This makes
+    // first-time/recovery setup reachable even when stale credentials exist.
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET);
+    WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD);
     WiFi.begin(ssid.c_str(), password.c_str());
-    ESP_LOGI(TAG, "Initiated Wi-Fi connection to '%s'", ssid.c_str());
+    ESP_LOGI(TAG, "Provisioning AP started: SSID '%s', IP %s",
+             AP_FALLBACK_SSID, WiFi.softAPIP().toString().c_str());
+    ESP_LOGI(TAG, "Initiated Wi-Fi STA connection to '%s'", ssid.c_str());
     return true;
 }
 
