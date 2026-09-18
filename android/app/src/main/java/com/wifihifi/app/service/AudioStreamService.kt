@@ -10,6 +10,7 @@ import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.wifihifi.app.MainActivity
@@ -40,6 +41,13 @@ class AudioStreamService : Service() {
 
         const val ACTION_START_STREAM = "com.wifihifi.app.ACTION_START"
         const val ACTION_STOP_STREAM = "com.wifihifi.app.ACTION_STOP"
+        const val EXTRA_PROJECTION_RESULT_CODE = "projection_result_code"
+        const val EXTRA_PROJECTION_DATA = "projection_data"
+        const val EXTRA_RECEIVER_IP = "receiver_ip"
+        const val EXTRA_RECEIVER_PORT = "receiver_port"
+        const val EXTRA_RECEIVER_NAME = "receiver_name"
+        const val EXTRA_RECEIVER_HOSTNAME = "receiver_hostname"
+        const val EXTRA_RECEIVER_LATENCY = "receiver_latency"
     }
 
     private val binder = LocalBinder()
@@ -74,32 +82,56 @@ class AudioStreamService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP_STREAM -> stopStreaming()
+            ACTION_START_STREAM -> startStreamingFromIntent(intent)
         }
         return START_NOT_STICKY
     }
+    
+    private fun startStreamingFromIntent(intent: Intent) {
+        if (_streamState.value.status != StreamStatus.IDLE) return
 
-    fun startStreaming(mediaProjection: MediaProjection, receiver: ReceiverDevice) {
-        if (_streamState.value.status == StreamStatus.STREAMING) {
-            Log.w(TAG, "Already streaming")
+        val resultCode = intent.getIntExtra(EXTRA_PROJECTION_RESULT_CODE, -1)
+        val projectionData = intent.getParcelableExtra<Intent>(EXTRA_PROJECTION_DATA)
+        val ip = intent.getStringExtra(EXTRA_RECEIVER_IP)
+        if (resultCode != android.app.Activity.RESULT_OK || projectionData == null || ip.isNullOrBlank()) {
+            Log.e(TAG, "Invalid streaming start intent")
+            stopSelf()
             return
         }
 
+        val receiver = ReceiverDevice(
+            deviceName = intent.getStringExtra(EXTRA_RECEIVER_NAME) ?: "WiFi-HiFi",
+            hostname = intent.getStringExtra(EXTRA_RECEIVER_HOSTNAME) ?: "wifi-hifi.local",
+            ipAddress = ip,
+            audioPort = intent.getIntExtra(EXTRA_RECEIVER_PORT, WiFiHiFiProtocol.DEFAULT_AUDIO_PORT),
+            latencyMode = intent.getStringExtra(EXTRA_RECEIVER_LATENCY) ?: "BALANCED"
+        )
+
+        try {
+            startForeground(NOTIFICATION_ID, createNotification("Connecting to ${receiver.deviceName}..."),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+            val projection = mpm.getMediaProjection(resultCode, projectionData)
+                ?: throw IllegalStateException("MediaProjection could not be created")
+            startStreamingInternal(projection, receiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "MediaProjection initialization failed", e)
+            _streamState.value = StreamState(status = StreamStatus.ERROR, errorMessage = "Capture initialization failed: ${e.message}")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    fun startStreaming(mediaProjection: MediaProjection, receiver: ReceiverDevice) {
+        if (_streamState.value.status != StreamStatus.IDLE) return
+        startStreamingInternal(mediaProjection, receiver)
+    }
+
+    private fun startStreamingInternal(mediaProjection: MediaProjection, receiver: ReceiverDevice) {
         _streamState.value = StreamState(
             status = StreamStatus.CONNECTING,
             connectedReceiver = receiver
         )
-
-        // Start Foreground Notification with MediaProjection service type on Android 14/15/16+
-        val notification = createNotification("Connecting to ${receiver.deviceName}...")
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
         acquireLocks()
 
         serviceScope.launch {
