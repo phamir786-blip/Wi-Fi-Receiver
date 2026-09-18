@@ -32,8 +32,30 @@ static bool startProvisioningAp() {
     for (uint8_t attempt = 1; attempt <= 3; ++attempt) {
         if (WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4)) {
             delay(100);
+
+            // Explicitly force the provisioning network to WPA2-PSK.
+            // Do not leave the authentication mode to framework/NVS defaults:
+            // Android clients must see a normal WPA2-Personal AP.
+            wifi_config_t apConfig{};
+            if (esp_wifi_get_config(WIFI_IF_AP, &apConfig) == ESP_OK) {
+                apConfig.ap.authmode = WIFI_AUTH_WPA2_PSK;
+                apConfig.ap.pmf_cfg.required = false;
+                apConfig.ap.pmf_cfg.capable = true;
+
+                esp_err_t setResult = esp_wifi_set_config(WIFI_IF_AP, &apConfig);
+                if (setResult != ESP_OK) {
+                    ESP_LOGW(TAG, "Failed to force WPA2 AP authentication: %s",
+                             esp_err_to_name(setResult));
+                } else {
+                    ESP_LOGI(TAG, "Provisioning AP authentication forced to WPA2-PSK");
+                }
+            } else {
+                ESP_LOGW(TAG, "Could not read SoftAP configuration for WPA2 verification");
+            }
+
+            delay(100);
             if (WiFi.softAPIP() == AP_FALLBACK_IP) {
-                ESP_LOGI(TAG, "Provisioning AP VERIFIED: SSID='%s' IP=%s channel=1",
+                ESP_LOGI(TAG, "Provisioning AP VERIFIED: SSID='%s' IP=%s channel=1 auth=WPA2-PSK",
                          AP_FALLBACK_SSID, WiFi.softAPIP().toString().c_str());
                 return true;
             }
