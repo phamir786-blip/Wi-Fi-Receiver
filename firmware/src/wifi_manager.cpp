@@ -46,8 +46,16 @@ bool WifiManager::connectStation(const String& ssid, const String& password) {
     // Keep the provisioning AP available while the STA connects. This makes
     // first-time/recovery setup reachable even when stale credentials exist.
     WiFi.mode(WIFI_AP_STA);
+    WiFi.setSleep(false);
     WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET);
-    WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD);
+    bool apStarted = WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4);
+    if (!apStarted) {
+        ESP_LOGE(TAG, "SoftAP start failed; retrying...");
+        delay(250);
+        apStarted = WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4);
+    }
+    ESP_LOGI(TAG, "Provisioning AP: %s, IP=%s", apStarted ? "STARTED" : "FAILED",
+             WiFi.softAPIP().toString().c_str());
     WiFi.begin(ssid.c_str(), password.c_str());
     ESP_LOGI(TAG, "Provisioning AP started: SSID '%s', IP %s",
              AP_FALLBACK_SSID, WiFi.softAPIP().toString().c_str());
@@ -58,8 +66,11 @@ bool WifiManager::connectStation(const String& ssid, const String& password) {
 void WifiManager::startApMode() {
     state_ = WIFI_STATE_AP_MODE;
     WiFi.mode(WIFI_AP);
+    WiFi.setSleep(false);
     WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET);
-    WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD);
+    bool apStarted = WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4);
+    ESP_LOGI(TAG, "SoftAP %s: SSID '%s', IP %s",
+             apStarted ? "started" : "FAILED", AP_FALLBACK_SSID, AP_FALLBACK_IP.toString().c_str());
 
     ESP_LOGI(TAG, "SoftAP started: SSID '%s', IP %s", AP_FALLBACK_SSID, AP_FALLBACK_IP.toString().c_str());
     g_discovery.begin();
