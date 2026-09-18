@@ -1,0 +1,53 @@
+name: ESP32-C3 Firmware Build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build-firmware:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build ESP32-C3 firmware and merged image
+        run: pio run -e esp32c3
+
+      - name: Verify build outputs
+        run: |
+          test -f .pio/build/esp32c3/firmware.bin
+          test -f .pio/build/esp32c3/bootloader.bin
+          test -f .pio/build/esp32c3/partitions.bin
+          test -f .pio/build/esp32c3/firmware-merged.bin
+          sha256sum .pio/build/esp32c3/*.bin
+
+      - name: Prepare flash package
+        run: |
+          mkdir -p build-artifact
+          cp .pio/build/esp32c3/firmware-merged.bin build-artifact/merged.bin
+          cp .pio/build/esp32c3/firmware.bin build-artifact/firmware.bin
+          cp .pio/build/esp32c3/bootloader.bin build-artifact/bootloader.bin
+          cp .pio/build/esp32c3/partitions.bin build-artifact/partitions.bin
+          sha256sum build-artifact/*.bin > build-artifact/SHA256SUMS.txt
+
+      - name: Upload merged firmware package
+        uses: actions/upload-artifact@v4
+        with:
+          name: wifi-hifi-esp32c3-merged
+          path: firmware/build-artifact/
