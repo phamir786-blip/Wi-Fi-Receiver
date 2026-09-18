@@ -96,7 +96,7 @@
 // FIRST-BOOT WI-FI AP FALLBACK
 // =============================================================================
 #define AP_FALLBACK_SSID             "WiFi-HiFi-Setup"
-#define AP_FALLBACK_PASSWORD         "" // Open for easy first-time connection
+#define AP_FALLBACK_PASSWORD         "12345678" // WPA2 provisioning AP
 #define AP_FALLBACK_IP               IPAddress(192, 168, 4, 1)
 #define AP_FALLBACK_GATEWAY          IPAddress(192, 168, 4, 1)
 #define AP_FALLBACK_SUBNET           IPAddress(255, 255, 255, 0)
