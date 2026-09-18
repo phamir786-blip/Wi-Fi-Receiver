@@ -1,0 +1,6 @@
+{
+  "name": "WiFi-HiFi",
+  "description": "Lossless Wi-Fi PCM audio streaming system: Android 16+ AudioPlaybackCapture sender and ESP32-C3 UDA1334A I2S receiver.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

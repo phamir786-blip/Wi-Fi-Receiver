@@ -1,0 +1,3 @@
+# Python dependencies for WiFi-HiFi ESP32-C3 PlatformIO firmware
+platformio>=6.1.16
+esptool>=4.7.0
