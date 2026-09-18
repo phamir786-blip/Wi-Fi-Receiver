@@ -29,6 +29,7 @@ import com.wifihifi.app.ui.MainScreen
 import com.wifihifi.app.ui.SettingsScreen
 import com.wifihifi.app.ui.theme.WiFiHiFiTheme
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
