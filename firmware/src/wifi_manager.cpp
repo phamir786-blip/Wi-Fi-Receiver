@@ -1,11 +1,10 @@
 /**
  * @file wifi_manager.cpp
- * @brief Wi-Fi Station and AP fallback implementation with graceful reconnection logic.
+ * @brief Wi-Fi Station and AP fallback implementation with explicit AP verification.
  */
 
 #include "wifi_manager.h"
 #include "settings.h"
-#include "discovery.h"
 #include <esp_log.h>
 #include <esp_wifi.h>
 
@@ -18,6 +17,37 @@ WifiManager::WifiManager()
       lastReconnectAttemptMs_(0),
       reconnectAttempts_(0) {}
 
+static bool startProvisioningAp() {
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    WiFi.setSleep(false);
+    WiFi.mode(WIFI_AP);
+    delay(100);
+
+    if (!WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET)) {
+        ESP_LOGE(TAG, "softAPConfig() failed");
+        return false;
+    }
+
+    for (uint8_t attempt = 1; attempt <= 3; ++attempt) {
+        if (WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4)) {
+            delay(100);
+            if (WiFi.softAPIP() == AP_FALLBACK_IP) {
+                ESP_LOGI(TAG, "Provisioning AP VERIFIED: SSID='%s' IP=%s channel=1",
+                         AP_FALLBACK_SSID, WiFi.softAPIP().toString().c_str());
+                return true;
+            }
+        }
+
+        ESP_LOGW(TAG, "Provisioning AP start attempt %u failed", attempt);
+        WiFi.softAPdisconnect(true);
+        delay(150);
+    }
+
+    ESP_LOGE(TAG, "Provisioning AP FAILED after 3 attempts");
+    return false;
+}
+
 bool WifiManager::init() {
     WiFi.persistent(false);
     WiFi.disconnect(true);
@@ -26,16 +56,34 @@ bool WifiManager::init() {
     String hostname = g_settings.getHostname();
     WiFi.setHostname(hostname.c_str());
 
+    // Always create the recovery AP first. Stored/stale STA credentials must
+    // never prevent the provisioning network from being created.
+    bool apReady = startProvisioningAp();
+
     if (g_settings.hasWifiCredentials()) {
         String ssid = g_settings.getWifiSsid();
         String pass = g_settings.getWifiPassword();
-        ESP_LOGI(TAG, "Found stored Wi-Fi credentials for SSID: %s. Connecting...", ssid.c_str());
+        configuredSsid_ = ssid;
+        ESP_LOGI(TAG, "Stored Wi-Fi credentials found for SSID: %s", ssid.c_str());
+
+        if (apReady) {
+            WiFi.mode(WIFI_AP_STA);
+            WiFi.setSleep(false);
+            WiFi.begin(ssid.c_str(), pass.c_str());
+            state_ = WIFI_STATE_CONNECTING;
+            reconnectAttempts_ = 0;
+            lastReconnectAttemptMs_ = millis();
+            ESP_LOGI(TAG, "STA connection started; provisioning AP remains active");
+            return true;
+        }
+
         return connectStation(ssid, pass);
-    } else {
-        ESP_LOGW(TAG, "No stored Wi-Fi credentials found. Starting SoftAP Provisioning Mode.");
-        startApMode();
-        return true;
     }
+
+    state_ = WIFI_STATE_AP_MODE;
+    reconnectAttempts_ = 0;
+    ESP_LOGI(TAG, "No stored Wi-Fi credentials. Provisioning AP is active.");
+    return apReady;
 }
 
 bool WifiManager::connectStation(const String& ssid, const String& password) {
@@ -43,21 +91,18 @@ bool WifiManager::connectStation(const String& ssid, const String& password) {
     state_ = WIFI_STATE_CONNECTING;
     reconnectAttempts_ = 0;
 
-    // Keep the provisioning AP available while the STA connects. This makes
-    // first-time/recovery setup reachable even when stale credentials exist.
     WiFi.mode(WIFI_AP_STA);
     WiFi.setSleep(false);
-    WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET);
-    bool apStarted = WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4);
-    if (!apStarted) {
-        ESP_LOGE(TAG, "SoftAP start failed; retrying...");
-        delay(250);
-        apStarted = WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4);
+
+    if (WiFi.softAPIP() != AP_FALLBACK_IP) {
+        WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET);
+        WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4);
     }
-    ESP_LOGI(TAG, "Provisioning AP: %s, IP=%s", apStarted ? "STARTED" : "FAILED",
-             WiFi.softAPIP().toString().c_str());
+
     WiFi.begin(ssid.c_str(), password.c_str());
-    ESP_LOGI(TAG, "Provisioning AP started: SSID '%s', IP %s",
+    lastReconnectAttemptMs_ = millis();
+
+    ESP_LOGI(TAG, "Provisioning AP: SSID='%s' IP=%s",
              AP_FALLBACK_SSID, WiFi.softAPIP().toString().c_str());
     ESP_LOGI(TAG, "Initiated Wi-Fi STA connection to '%s'", ssid.c_str());
     return true;
@@ -66,32 +111,17 @@ bool WifiManager::connectStation(const String& ssid, const String& password) {
 void WifiManager::startApMode() {
     state_ = WIFI_STATE_AP_MODE;
     reconnectAttempts_ = 0;
+    startProvisioningAp();
 
-    WiFi.mode(WIFI_AP);
-    WiFi.setSleep(false);
-    WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET);
-    bool apStarted = WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4);
-    ESP_LOGI(TAG, "SoftAP %s: SSID '%s', IP %s",
-             apStarted ? "started" : "FAILED", AP_FALLBACK_SSID, AP_FALLBACK_IP.toString().c_str());
-
-    // Discovery/mDNS is initialized once by main.cpp after all network
-    // services are brought up. Do not initialize it a second time here.
-    if (!apStarted) {
-        ESP_LOGE(TAG, "Provisioning AP is unavailable; recovery web interface cannot be reached.");
-    } else {
-        ESP_LOGI(TAG, "Provisioning web interface: http://%s/", AP_FALLBACK_IP.toString().c_str());
-        ESP_LOGI(TAG, "Provisioning AP credentials: SSID='%s', password='%s'",
-                 AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD);
-    }
+    ESP_LOGI(TAG, "Provisioning web interface: http://%s/", AP_FALLBACK_IP.toString().c_str());
+    ESP_LOGI(TAG, "Provisioning AP credentials: SSID='%s', password='%s'",
+             AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD);
 }
 
 void WifiManager::update() {
     uint32_t now = millis();
 
-    if (state_ == WIFI_STATE_AP_MODE) {
-        // In AP mode, waiting for user to configure credentials via Web UI.
-        return;
-    }
+    if (state_ == WIFI_STATE_AP_MODE) return;
 
     if (WiFi.status() == WL_CONNECTED) {
         if (state_ != WIFI_STATE_CONNECTED) {
@@ -99,36 +129,25 @@ void WifiManager::update() {
             reconnectAttempts_ = 0;
             ESP_LOGI(TAG, "Wi-Fi Connected! IP: %s, RSSI: %d dBm, Hostname: %s",
                      WiFi.localIP().toString().c_str(), WiFi.RSSI(), WiFi.getHostname());
-            // Discovery/mDNS remains managed by main.cpp.
         }
-    } else {
-        if (state_ == WIFI_STATE_CONNECTED) {
-            ESP_LOGW(TAG, "Wi-Fi connection lost. Attempting reconnection...");
-            state_ = WIFI_STATE_DISCONNECTED;
+    } else if (state_ == WIFI_STATE_CONNECTING || state_ == WIFI_STATE_DISCONNECTED) {
+        if (now - lastReconnectAttemptMs_ > 5000) {
             lastReconnectAttemptMs_ = now;
-        } else if (state_ == WIFI_STATE_CONNECTING || state_ == WIFI_STATE_DISCONNECTED) {
-            // Attempt reconnect every 5 seconds
-            if (now - lastReconnectAttemptMs_ > 5000) {
-                lastReconnectAttemptMs_ = now;
-                reconnectAttempts_++;
-                ESP_LOGI(TAG, "Reconnecting to Wi-Fi '%s' (Attempt %d)...",
-                         configuredSsid_.c_str(), reconnectAttempts_);
-                WiFi.reconnect();
+            reconnectAttempts_++;
+            ESP_LOGI(TAG, "Reconnecting to Wi-Fi '%s' (Attempt %d)...",
+                     configuredSsid_.c_str(), reconnectAttempts_);
+            WiFi.reconnect();
 
-                // If unable to reconnect for > 15 attempts (~75s), fallback to AP mode for recovery.
-                if (reconnectAttempts_ >= 15) {
-                    ESP_LOGW(TAG, "Failed to connect to Wi-Fi after 15 attempts. Starting fallback AP mode.");
-                    startApMode();
-                }
+            if (reconnectAttempts_ >= 15) {
+                ESP_LOGW(TAG, "STA failed after 15 attempts; switching to standalone provisioning AP.");
+                startApMode();
             }
         }
     }
 }
 
 String WifiManager::getSsid() const {
-    if (state_ == WIFI_STATE_AP_MODE) {
-        return String(AP_FALLBACK_SSID);
-    }
+    if (state_ == WIFI_STATE_AP_MODE) return String(AP_FALLBACK_SSID);
     return WiFi.SSID();
 }
 
@@ -138,9 +157,7 @@ int8_t WifiManager::getRssi() const {
 }
 
 IPAddress WifiManager::getIpAddress() const {
-    if (state_ == WIFI_STATE_AP_MODE || WiFi.localIP() == INADDR_NONE) {
-        return WiFi.softAPIP();
-    }
+    if (state_ == WIFI_STATE_AP_MODE || WiFi.localIP() == INADDR_NONE) return WiFi.softAPIP();
     return WiFi.localIP();
 }
 
