@@ -4,7 +4,10 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Binary protocol definitions matching ESP32-C3 firmware and WIFI_HIFI_PROTOCOL.md
+ * Binary protocol definitions matching ESP32-C3 firmware and WIFI_HIFI_PROTOCOL.md.
+ *
+ * Header layout is 32 bytes:
+ * 4 + 1 + 1 + 2 + 4 + 8 + 4 + 1 + 1 + 1 + 1 + 2 + 2 = 32.
  */
 object WiFiHiFiProtocol {
     const val MAGIC_U32: Int = 0x46484657 // "WFHF" in Little-Endian
@@ -19,7 +22,7 @@ object WiFiHiFiProtocol {
     const val LATENCY_BALANCED: Byte = 0x01
     const val LATENCY_STABLE: Byte = 0x02
 
-    const val HEADER_SIZE = 28
+    const val HEADER_SIZE = 32
 
     const val DEFAULT_AUDIO_PORT = 50005
     const val DEFAULT_DISCOVERY_PORT = 50006
@@ -31,7 +34,7 @@ object WiFiHiFiProtocol {
     const val BYTES_PER_FRAME = 4 // 2 channels * 2 bytes
 
     /**
-     * Packs the 28-byte binary header into a pre-allocated ByteBuffer at position 0.
+     * Packs the 32-byte binary header into a pre-allocated ByteBuffer at position 0.
      */
     fun packHeader(
         buffer: ByteBuffer,
@@ -61,5 +64,6 @@ object WiFiHiFiProtocol {
         buffer.put(0.toByte()) // Reserved
         buffer.putShort(payloadLength)
         buffer.putShort(checksum)
+        check(buffer.position() == HEADER_SIZE) { "WiFi-HiFi header size mismatch" }
     }
 }
