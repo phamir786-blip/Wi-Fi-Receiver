@@ -1,7 +1,7 @@
 /**
  * @file protocol_defs.h
  * @brief Binary protocol structures shared between ESP32 receiver and Android sender.
- * 
+ *
  * Must match protocol/WIFI_HIFI_PROTOCOL.md exactly.
  */
 
@@ -32,7 +32,7 @@ enum WfhfLatencyMode : uint8_t {
 
 #pragma pack(push, 1)
 /**
- * @brief 28-byte binary header preceding raw PCM audio payload.
+ * @brief 32-byte binary header preceding raw PCM audio payload.
  */
 typedef struct {
     uint32_t magic;              // "WFHF" (0x46484657)
@@ -51,7 +51,11 @@ typedef struct {
 } wfhf_header_t;
 #pragma pack(pop)
 
-#define WFHF_HEADER_SIZE sizeof(wfhf_header_t) // Exactly 28 bytes
+#define WFHF_HEADER_SIZE sizeof(wfhf_header_t) // Exactly 32 bytes
+
+#ifdef __cplusplus
+static_assert(sizeof(wfhf_header_t) == 32, "WiFi-HiFi header must be exactly 32 bytes");
+#endif
 
 /**
  * @brief Real-time audio pipeline metrics
