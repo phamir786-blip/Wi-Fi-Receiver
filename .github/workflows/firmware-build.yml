@@ -24,7 +24,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install PlatformIO
-        run: pip install platformio
+        run: pip install platformio esptool==4.5.1
 
       - name: Build ESP32-C3 firmware and merged image
         run: pio run -e esp32c3
