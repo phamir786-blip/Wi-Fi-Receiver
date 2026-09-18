@@ -20,7 +20,7 @@
 |                 |                                                       |
 |                 v (44.1 kHz, 16-bit, 2-ch Stereo Linear PCM)            |
 |        [ PcmPacketizer ]                                                |
-|                 | (10ms Chunks + 28-byte Header, Magic 0x46484657)      |
+|                 | (10ms Chunks + 32-byte Header, Magic 0x46484657)      |
 |                 v                                                       |
 |        [ UdpAudioSender ]                                               |
 +-----------------|-------------------------------------------------------+
@@ -129,7 +129,7 @@ anaya2025/WiFi-HiFi/
 ## 4. Binary Network Audio Protocol Summary
 
 - **Transport**: UDP Unicast to port `50005`.
-- **Packet Structure**: 28-byte binary header followed by 10ms of 16-bit stereo PCM audio (1764 bytes payload = 1792 bytes total datagram).
+- **Packet Structure**: 32-byte binary header followed by 10ms of 16-bit stereo PCM audio (1764 bytes payload = 1796 bytes total datagram).
 - **Byte Order**: Little-Endian.
 
 ```
