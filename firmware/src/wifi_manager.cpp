@@ -24,36 +24,22 @@ static bool startProvisioningAp() {
     WiFi.mode(WIFI_AP);
     delay(100);
 
+    // Configure the fixed provisioning address first.
     if (!WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET)) {
         ESP_LOGE(TAG, "softAPConfig() failed");
         return false;
     }
 
+    // Use the documented Arduino-ESP32 SoftAP API.
+    // A non-NULL passphrase (8+ characters) creates a secured AP.
+    // Channel 1, visible SSID, maximum 4 stations.
     for (uint8_t attempt = 1; attempt <= 3; ++attempt) {
-        if (WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, false, 4)) {
+        if (WiFi.softAP(AP_FALLBACK_SSID, AP_FALLBACK_PASSWORD, 1, 0, 4)) {
             delay(100);
 
-            // Explicitly force the provisioning network to WPA2-PSK.
-            // The ESP32-C3 Arduino WiFi core used by this project exposes
-            // authmode in wifi_ap_config_t; PMF fields are not available in
-            // this framework version.
-            wifi_config_t apConfig{};
-            if (esp_wifi_get_config(WIFI_IF_AP, &apConfig) == ESP_OK) {
-                apConfig.ap.authmode = WIFI_AUTH_WPA2_PSK;
-                esp_err_t setResult = esp_wifi_set_config(WIFI_IF_AP, &apConfig);
-                if (setResult != ESP_OK) {
-                    ESP_LOGW(TAG, "Failed to force WPA2 AP authentication: %s",
-                             esp_err_to_name(setResult));
-                } else {
-                    ESP_LOGI(TAG, "Provisioning AP authentication forced to WPA2-PSK");
-                }
-            } else {
-                ESP_LOGW(TAG, "Could not read SoftAP configuration for WPA2 verification");
-            }
-
-            delay(100);
             if (WiFi.softAPIP() == AP_FALLBACK_IP) {
-                ESP_LOGI(TAG, "Provisioning AP VERIFIED: SSID='%s' IP=%s channel=1 auth=WPA2-PSK",
+                ESP_LOGI(TAG,
+                         "Provisioning AP VERIFIED: SSID='%s' IP=%s channel=1 security=WPA2-PSK max_clients=4",
                          AP_FALLBACK_SSID, WiFi.softAPIP().toString().c_str());
                 return true;
             }
@@ -62,6 +48,11 @@ static bool startProvisioningAp() {
         ESP_LOGW(TAG, "Provisioning AP start attempt %u failed", attempt);
         WiFi.softAPdisconnect(true);
         delay(150);
+
+        // Restore AP mode and static AP configuration before retrying.
+        WiFi.mode(WIFI_AP);
+        WiFi.setSleep(false);
+        WiFi.softAPConfig(AP_FALLBACK_IP, AP_FALLBACK_GATEWAY, AP_FALLBACK_SUBNET);
     }
 
     ESP_LOGE(TAG, "Provisioning AP FAILED after 3 attempts");
