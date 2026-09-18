@@ -88,7 +88,6 @@ bool WifiManager::init() {
 
 bool WifiManager::connectStation(const String& ssid, const String& password) {
     configuredSsid_ = ssid;
-    provisioningGraceUntilMs_ = 0;
     state_ = WIFI_STATE_CONNECTING;
     reconnectAttempts_ = 0;
 
@@ -112,7 +111,6 @@ bool WifiManager::connectStation(const String& ssid, const String& password) {
 void WifiManager::startApMode() {
     state_ = WIFI_STATE_AP_MODE;
     reconnectAttempts_ = 0;
-    provisioningGraceUntilMs_ = 0;
     startProvisioningAp();
 
     ESP_LOGI(TAG, "Provisioning web interface: http://%s/", AP_FALLBACK_IP.toString().c_str());
@@ -124,19 +122,23 @@ void WifiManager::update() {
     uint32_t now = millis();
 
     if (state_ == WIFI_STATE_AP_MODE) {
-        // Provisioning AP is intentionally persistent. A saved STA profile is
-        // only started when the user submits/starts provisioning via the web UI,
-        // so AP+STA can never take the radio away from the setup network merely
-        // because credentials happen to exist in NVS.
+        // The provisioning AP remains available until the user explicitly
+        // starts a STA connection from the provisioning web interface.
         return;
     }
 
     if (WiFi.status() == WL_CONNECTED) {
         if (state_ != WIFI_STATE_CONNECTED) {
+            // Home Wi-Fi is confirmed. The provisioning AP has served its
+            // purpose, so shut it down and continue in STA-only mode.
+            WiFi.softAPdisconnect(true);
+            WiFi.mode(WIFI_STA);
+            WiFi.setSleep(false);
             state_ = WIFI_STATE_CONNECTED;
             reconnectAttempts_ = 0;
             ESP_LOGI(TAG, "Wi-Fi Connected! IP: %s, RSSI: %d dBm, Hostname: %s",
                      WiFi.localIP().toString().c_str(), WiFi.RSSI(), WiFi.getHostname());
+            ESP_LOGI(TAG, "Provisioning AP stopped; receiver is now STA-only");
         }
     } else if (state_ == WIFI_STATE_CONNECTING || state_ == WIFI_STATE_DISCONNECTED) {
         if (now - lastReconnectAttemptMs_ > 5000) {
