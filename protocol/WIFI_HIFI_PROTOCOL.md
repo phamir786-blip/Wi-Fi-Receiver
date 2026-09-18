@@ -40,7 +40,7 @@ The system relies on three network channels:
 
 ## 2. Audio Data Packet Layout (UDP Port 50005)
 
-Every audio packet consists of a **28-byte fixed-size binary header** in Little-Endian byte order, immediately followed by the raw interleaved PCM payload.
+Every audio packet consists of a **32-byte fixed-size binary header** in Little-Endian byte order, immediately followed by the raw interleaved PCM payload.
 
 ### 2.1 Header Binary Layout
 
