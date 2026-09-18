@@ -15,7 +15,8 @@ WifiManager g_wifi_manager;
 WifiManager::WifiManager()
     : state_(WIFI_STATE_DISCONNECTED),
       lastReconnectAttemptMs_(0),
-      reconnectAttempts_(0) {}
+      reconnectAttempts_(0),
+      provisioningGraceUntilMs_(0) {}
 
 static bool startProvisioningAp() {
     WiFi.mode(WIFI_OFF);
@@ -67,13 +68,13 @@ bool WifiManager::init() {
         ESP_LOGI(TAG, "Stored Wi-Fi credentials found for SSID: %s", ssid.c_str());
 
         if (apReady) {
-            WiFi.mode(WIFI_AP_STA);
-            WiFi.setSleep(false);
-            WiFi.begin(ssid.c_str(), pass.c_str());
-            state_ = WIFI_STATE_CONNECTING;
+            // Keep the provisioning AP completely standalone for 60 seconds.
+            // AP+STA uses the STA's channel, which can move the provisioning AP
+            // away from channel 1 before a phone discovers it.
+            state_ = WIFI_STATE_AP_MODE;
+            provisioningGraceUntilMs_ = millis() + 60000UL;
             reconnectAttempts_ = 0;
-            lastReconnectAttemptMs_ = millis();
-            ESP_LOGI(TAG, "STA connection started; provisioning AP remains active");
+            ESP_LOGI(TAG, "Provisioning AP is standalone for 60s before saved STA connection");
             return true;
         }
 
@@ -88,6 +89,7 @@ bool WifiManager::init() {
 
 bool WifiManager::connectStation(const String& ssid, const String& password) {
     configuredSsid_ = ssid;
+    provisioningGraceUntilMs_ = 0;
     state_ = WIFI_STATE_CONNECTING;
     reconnectAttempts_ = 0;
 
@@ -111,6 +113,7 @@ bool WifiManager::connectStation(const String& ssid, const String& password) {
 void WifiManager::startApMode() {
     state_ = WIFI_STATE_AP_MODE;
     reconnectAttempts_ = 0;
+    provisioningGraceUntilMs_ = 0;
     startProvisioningAp();
 
     ESP_LOGI(TAG, "Provisioning web interface: http://%s/", AP_FALLBACK_IP.toString().c_str());
@@ -121,7 +124,24 @@ void WifiManager::startApMode() {
 void WifiManager::update() {
     uint32_t now = millis();
 
-    if (state_ == WIFI_STATE_AP_MODE) return;
+    if (state_ == WIFI_STATE_AP_MODE) {
+        if (provisioningGraceUntilMs_ != 0 &&
+            (int32_t)(now - provisioningGraceUntilMs_) >= 0 &&
+            g_settings.hasWifiCredentials()) {
+            String ssid = g_settings.getWifiSsid();
+            String pass = g_settings.getWifiPassword();
+            configuredSsid_ = ssid;
+            provisioningGraceUntilMs_ = 0;
+            WiFi.mode(WIFI_AP_STA);
+            WiFi.setSleep(false);
+            WiFi.begin(ssid.c_str(), pass.c_str());
+            state_ = WIFI_STATE_CONNECTING;
+            reconnectAttempts_ = 0;
+            lastReconnectAttemptMs_ = now;
+            ESP_LOGI(TAG, "60s provisioning grace expired; starting saved STA connection to '%s'", ssid.c_str());
+        }
+        return;
+    }
 
     if (WiFi.status() == WL_CONNECTED) {
         if (state_ != WIFI_STATE_CONNECTED) {
