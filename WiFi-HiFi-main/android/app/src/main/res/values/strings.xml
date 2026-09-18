@@ -1,8 +1,0 @@
-<resources>
-    <string name="app_name">WiFi-HiFi</string>
-    <string name="notification_channel_name">WiFi-HiFi Audio Streaming</string>
-    <string name="notification_channel_desc">Active audio streaming to WiFi-HiFi receiver</string>
-    <string name="streaming_active">Streaming lossless audio to receiver</string>
-    <string name="action_stop">Stop Streaming</string>
-    <string name="action_mute">Mute</string>
-</resources>
