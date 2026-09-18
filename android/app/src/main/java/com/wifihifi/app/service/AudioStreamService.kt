@@ -208,24 +208,52 @@ class AudioStreamService : Service() {
         stopSelf()
     }
 
+    fun setControlReceiver(receiver: ReceiverDevice) {
+        if (_streamState.value.status == StreamStatus.IDLE) {
+            _streamState.value = _streamState.value.copy(
+                connectedReceiver = receiver,
+                latencyMode = receiver.latencyMode
+            )
+        }
+    }
+
     fun setVolume(volume: Int) {
         val receiver = _streamState.value.connectedReceiver ?: return
+        setVolumeForReceiver(receiver, volume)
+    }
+
+    fun setVolumeForReceiver(receiver: ReceiverDevice, volume: Int) {
+        val clamped = volume.coerceIn(0, 100)
         serviceScope.launch {
-            controller.setVolume(receiver.ipAddress, volume)
-            _streamState.value = _streamState.value.copy(volume = volume)
+            controller.setVolume(receiver.ipAddress, clamped)
+            _streamState.value = _streamState.value.copy(
+                volume = clamped,
+                connectedReceiver = receiver
+            )
         }
     }
 
     fun setMute(mute: Boolean) {
         val receiver = _streamState.value.connectedReceiver ?: return
+        setMuteForReceiver(receiver, mute)
+    }
+
+    fun setMuteForReceiver(receiver: ReceiverDevice, mute: Boolean) {
         serviceScope.launch {
             controller.setMute(receiver.ipAddress, mute)
-            _streamState.value = _streamState.value.copy(isMuted = mute)
+            _streamState.value = _streamState.value.copy(
+                isMuted = mute,
+                connectedReceiver = receiver
+            )
         }
     }
 
     fun setLatencyMode(mode: String) {
         val receiver = _streamState.value.connectedReceiver ?: return
+        setLatencyModeForReceiver(receiver, mode)
+    }
+
+    fun setLatencyModeForReceiver(receiver: ReceiverDevice, mode: String) {
         serviceScope.launch {
             controller.setLatencyMode(receiver.ipAddress, mode)
             val modeByte = when (mode) {
@@ -234,7 +262,10 @@ class AudioStreamService : Service() {
                 else -> WiFiHiFiProtocol.LATENCY_BALANCED
             }
             packetizer?.setLatencyMode(modeByte)
-            _streamState.value = _streamState.value.copy(latencyMode = mode)
+            _streamState.value = _streamState.value.copy(
+                latencyMode = mode,
+                connectedReceiver = receiver
+            )
         }
     }
 
