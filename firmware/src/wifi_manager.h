@@ -40,7 +40,6 @@ private:
     WifiState state_;
     uint32_t lastReconnectAttemptMs_;
     uint8_t reconnectAttempts_;
-    uint32_t provisioningGraceUntilMs_;
     String configuredSsid_;
 };
 
