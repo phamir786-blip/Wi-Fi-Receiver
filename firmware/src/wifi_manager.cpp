@@ -68,13 +68,14 @@ bool WifiManager::init() {
         ESP_LOGI(TAG, "Stored Wi-Fi credentials found for SSID: %s", ssid.c_str());
 
         if (apReady) {
-            // Keep the provisioning AP completely standalone for 60 seconds.
-            // AP+STA uses the STA's channel, which can move the provisioning AP
-            // away from channel 1 before a phone discovers it.
+            // Keep the provisioning AP available until the saved STA connection
+            // succeeds. There is no arbitrary provisioning timeout.
             state_ = WIFI_STATE_AP_MODE;
-            provisioningGraceUntilMs_ = millis() + 60000UL;
+            provisioningGraceUntilMs_ = 0;
             reconnectAttempts_ = 0;
-            ESP_LOGI(TAG, "Provisioning AP is standalone for 60s before saved STA connection");
+            ESP_LOGI(TAG, "Provisioning AP remains available until saved STA connection succeeds");
+            // Do not enter AP+STA automatically here. The AP must remain
+            // standalone and reliable until the user provisions/starts STA.
             return true;
         }
 
@@ -125,21 +126,10 @@ void WifiManager::update() {
     uint32_t now = millis();
 
     if (state_ == WIFI_STATE_AP_MODE) {
-        if (provisioningGraceUntilMs_ != 0 &&
-            (int32_t)(now - provisioningGraceUntilMs_) >= 0 &&
-            g_settings.hasWifiCredentials()) {
-            String ssid = g_settings.getWifiSsid();
-            String pass = g_settings.getWifiPassword();
-            configuredSsid_ = ssid;
-            provisioningGraceUntilMs_ = 0;
-            WiFi.mode(WIFI_AP_STA);
-            WiFi.setSleep(false);
-            WiFi.begin(ssid.c_str(), pass.c_str());
-            state_ = WIFI_STATE_CONNECTING;
-            reconnectAttempts_ = 0;
-            lastReconnectAttemptMs_ = now;
-            ESP_LOGI(TAG, "60s provisioning grace expired; starting saved STA connection to '%s'", ssid.c_str());
-        }
+        // Provisioning AP is intentionally persistent. A saved STA profile is
+        // only started when the user submits/starts provisioning via the web UI,
+        // so AP+STA can never take the radio away from the setup network merely
+        // because credentials happen to exist in NVS.
         return;
     }
 
