@@ -34,14 +34,12 @@ static bool startProvisioningAp() {
             delay(100);
 
             // Explicitly force the provisioning network to WPA2-PSK.
-            // Do not leave the authentication mode to framework/NVS defaults:
-            // Android clients must see a normal WPA2-Personal AP.
+            // The ESP32-C3 Arduino WiFi core used by this project exposes
+            // authmode in wifi_ap_config_t; PMF fields are not available in
+            // this framework version.
             wifi_config_t apConfig{};
             if (esp_wifi_get_config(WIFI_IF_AP, &apConfig) == ESP_OK) {
                 apConfig.ap.authmode = WIFI_AUTH_WPA2_PSK;
-                apConfig.ap.pmf_cfg.required = false;
-                apConfig.ap.pmf_cfg.capable = true;
-
                 esp_err_t setResult = esp_wifi_set_config(WIFI_IF_AP, &apConfig);
                 if (setResult != ESP_OK) {
                     ESP_LOGW(TAG, "Failed to force WPA2 AP authentication: %s",
